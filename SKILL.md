@@ -74,6 +74,21 @@ main               1      274k   10.0%  $ 36.76   36.5%
 
 Format token counts: `1.2M` / `692k` / `344`. Keep table tight, no padding.
 
+## Improvement log (optional)
+
+If the user asks to log an improvement or track savings:
+- Read/create `~/.openclaw/workspace/memory/token-diet-log.md`
+- Append entry: date, what changed, token % before/after, cost before/after
+- Show running total saved
+
+Format:
+```
+## Token Diet Log
+| Date | Change | Tokens Before | Tokens After | Cost Saved/wk |
+|---|---|---|---|---|
+| 2026-04-05 | Disabled Paperclip | 68% | 36% | ~$5.79 |
+```
+
 ## Notes
 
 - `estimatedCostUsd` is OpenClaw's estimate — not exact billing
