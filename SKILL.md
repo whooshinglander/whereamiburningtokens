@@ -1,97 +1,83 @@
 ---
 name: whereamiburningtokens
-description: "Reads OpenClaw session data and shows exactly where tokens and money are going — by session type, across all sessions. Surfaces sinkholes like runaway logging sessions, expensive crons, or bloated sub-agents. Use when the user asks: 'where are my tokens going?', 'what's my biggest token cost?', 'token breakdown', 'where am I burning tokens this week/today/all-time', 'am I burning money on background tasks?', or 'token audit'."
+description: "Read-only OpenClaw token usage analyzer. Reads the known local sessions ledger and shows where tokens and estimated cost are going by session type."
 ---
 
 # whereamiburningtokens
 
-Reads `~/.openclaw/agents/main/sessions/sessions.json` and shows a token + cost breakdown by session category.
+Use this skill when the user wants to understand where OpenClaw tokens or estimated model cost are being spent.
 
-## Data source
+## What this skill does
 
-```
-~/.openclaw/agents/main/sessions/sessions.json
-```
+This skill is a **read-only local analyzer**.
 
-Each session entry has:
-- `totalTokens`, `inputTokens`, `outputTokens`, `cacheRead`, `cacheWrite`
-- `estimatedCostUsd`
-- `model`, `modelProvider`
-- `startedAt`, `updatedAt` (Unix ms timestamps)
+It reads the known OpenClaw sessions ledger at:
+- `~/.openclaw/agents/main/sessions/sessions.json`
 
-Session keys: `agent:main:<category>:<optional-id>`
+If the file is missing, report that exact missing path and stop.
 
-Categories (3rd segment of key):
-- `main` — interactive chat
-- `cron` — heartbeats + scheduled tasks
-- `subagent` — spawned sub-agents
-- `paperclip` — Paperclip logging (if installed)
-- anything else — plugins, integrations
+## Hard boundaries
 
-## Time windows
+- **Read only.** Do not modify config, session files, logs, memory, or any project files.
+- **No filesystem wandering.** Do not scan the wider filesystem for alternatives unless the user explicitly asks.
+- **No external network calls.** Do not send local session data to third-party services.
+- **No secret access.** Do not read keychain items, env secrets, auth tokens, or unrelated OpenClaw state.
+- **No automation changes.** Do not change heartbeat frequency, model config, cron jobs, or agent settings unless the user separately asks for that after seeing the analysis.
 
-Detect from user's phrasing:
-- "this week" / default → last 7 days
-- "today" → last 24 hours
-- "this month" → last 30 days
-- "all time" / "all-time" → no filter
+## Allowed inputs
 
-Filter by `updatedAt >= cutoff_ms`.
+Primary input:
+- `~/.openclaw/agents/main/sessions/sessions.json`
 
-## Steps
+Optional secondary input only if the user explicitly provides it:
+- a user-supplied exported JSON file with the same purpose
 
-1. Read and parse sessions.json. If missing, say so and stop.
+## Required behavior
 
-2. Filter by time window based on user's phrasing.
-
-3. Group by category (3rd `:` segment of key). Sum `totalTokens` and `estimatedCostUsd`.
-
-4. Sort by tokens descending. Calculate % of total for both tokens and cost.
-
-5. Flag anomalies:
-   - **⚠️ SINKHOLE**: category >40% tokens but <15% cost (cheap model, high volume — likely a logging/cron drain)
-   - **⚠️ EXPENSIVE**: non-main category >35% cost but <15% tokens (expensive model, few calls — check model config)
-
-6. Output the table and 1-2 insight lines.
+1. Read only the sessions ledger file.
+2. Analyze usage by session category where possible, for example: main, cron, subagent, paperclip, heartbeat, or other visible categories from session metadata.
+3. Show totals for tokens, estimated cost, and number of sessions.
+4. Support time windows when the user asks, such as:
+   - today
+   - last 7 days
+   - last 30 days
+   - all time
+5. Flag suspicious patterns in plain English, for example:
+   - high-token background tasks
+   - expensive low-value cron runs
+   - a cheap model consuming excessive total tokens
+6. Give concise recommendations, but keep them separate from any action. Diagnose first.
 
 ## Output format
 
-```
-🔥 WHERE AM I BURNING TOKENS? (last 7 days)
-66 sessions | 2.8M tokens | $100.65 est.
+Prefer a compact table plus 2 to 5 short observations.
 
-Category        Sess    Tokens    Tok%     Cost   Cost%
-──────────────────────────────────────────────────────────
-paperclip         26      997k   36.1%  $  5.79    5.8%  ⚠️ SINKHOLE
-subagent          22      795k   28.8%  $  9.49    9.4%
-cron              16      692k   25.1%  $ 48.61   48.3%  ⚠️ EXPENSIVE
-main               1      274k   10.0%  $ 36.76   36.5%
+Include:
+- time window used
+- total sessions
+- total tokens
+- estimated total cost
+- breakdown by category
+- notable anomalies
+- next-step recommendations
 
-💡 paperclip is eating 36% of tokens on a cheap model.
-   High volume, low cost = lots of context for little output. Consider disabling.
-💡 cron costs 48% of spend. Verify heartbeat model is Haiku or a local model, not Sonnet.
-```
+## Good prompts
 
-Format token counts: `1.2M` / `692k` / `344`. Keep table tight, no padding.
+- where am I burning tokens?
+- token breakdown this week
+- what is costing me the most in OpenClaw?
+- show token sinkholes for the last 30 days
+- which session type is burning the most money?
 
-## Improvement log (optional)
+## Bad assumptions to avoid
 
-If the user asks to log an improvement or track savings:
-- Read/create `~/.openclaw/workspace/memory/token-diet-log.md`
-- Append entry: date, what changed, token % before/after, cost before/after
-- Show running total saved
+- Do not assume every expensive session is bad.
+- Do not assume session category names if the data does not support them.
+- Do not fabricate cost numbers, categories, or recommendations.
 
-Format:
-```
-## Token Diet Log
-| Date | Change | Tokens Before | Tokens After | Cost Saved/wk |
-|---|---|---|---|---|
-| 2026-04-05 | Disabled Paperclip | 68% | 36% | ~$5.79 |
-```
+## If the file is missing
 
-## Notes
-
-- `estimatedCostUsd` is OpenClaw's estimate — not exact billing
-- `main` being expensive is expected (interactive Sonnet sessions) — don't flag it
-- Sessions.json is cumulative — grows over time, no automatic reset
-- Don't read individual session `.jsonl` files — sessions.json has everything needed
+Reply with:
+- the exact missing path
+- that the skill is intentionally constrained to that file
+- what the user can provide instead if they want analysis
