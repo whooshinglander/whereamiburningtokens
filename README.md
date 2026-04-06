@@ -1,8 +1,8 @@
 # whereamiburningtokens
 
-An OpenClaw skill that shows exactly where your tokens and money are going — by session type.
+An OpenClaw skill that shows exactly where your tokens and money are going by session type.
 
-Surfaces sinkholes like runaway logging, expensive heartbeats, or bloated sub-agents before your bill does.
+It is a read-only diagnostic skill. By default it reads only `~/.openclaw/agents/main/sessions/sessions.json` to surface sinkholes like runaway logging, expensive heartbeats, or bloated sub-agents before your bill does.
 
 ## What it shows
 
@@ -27,3 +27,11 @@ openclaw skills install whereamiburningtokens
 ## Usage
 
 Just ask: "where am I burning tokens?" or "token breakdown this week"
+
+## Safety
+
+- Read-only by default
+- Reads only `~/.openclaw/agents/main/sessions/sessions.json`
+- Optional log file access happens only if the user explicitly asks to track savings
+- Does not modify, delete, or execute anything
+- Does not exfiltrate local data

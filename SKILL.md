@@ -1,83 +1,106 @@
 ---
 name: whereamiburningtokens
-description: "Read-only OpenClaw token usage analyzer. Reads the known local sessions ledger and shows where tokens and estimated cost are going by session type."
+description: "Reads only ~/.openclaw/agents/main/sessions/sessions.json to show exactly where OpenClaw tokens and estimated cost are going by session type. Read-only diagnostic skill, no writes, no deletes, no command execution, no network exfiltration."
 ---
 
 # whereamiburningtokens
 
-Use this skill when the user wants to understand where OpenClaw tokens or estimated model cost are being spent.
+Reads only `~/.openclaw/agents/main/sessions/sessions.json` and shows a token + cost breakdown by session category.
 
-## What this skill does
+## Safety boundary
 
-This skill is a **read-only local analyzer**.
+- Read-only skill
+- Reads only `~/.openclaw/agents/main/sessions/sessions.json`
+- Does not read any other local files unless the user explicitly asks for the optional improvement log
+- Does not modify, delete, or execute anything
+- Does not send local data anywhere
 
-It reads the known OpenClaw sessions ledger at:
-- `~/.openclaw/agents/main/sessions/sessions.json`
+## Data source
 
-If the file is missing, report that exact missing path and stop.
+```
+~/.openclaw/agents/main/sessions/sessions.json
+```
 
-## Hard boundaries
+Each session entry has:
+- `totalTokens`, `inputTokens`, `outputTokens`, `cacheRead`, `cacheWrite`
+- `estimatedCostUsd`
+- `model`, `modelProvider`
+- `startedAt`, `updatedAt` (Unix ms timestamps)
 
-- **Read only.** Do not modify config, session files, logs, memory, or any project files.
-- **No filesystem wandering.** Do not scan the wider filesystem for alternatives unless the user explicitly asks.
-- **No external network calls.** Do not send local session data to third-party services.
-- **No secret access.** Do not read keychain items, env secrets, auth tokens, or unrelated OpenClaw state.
-- **No automation changes.** Do not change heartbeat frequency, model config, cron jobs, or agent settings unless the user separately asks for that after seeing the analysis.
+Session keys: `agent:main:<category>:<optional-id>`
 
-## Allowed inputs
+Categories (3rd segment of key):
+- `main` — interactive chat
+- `cron` — heartbeats + scheduled tasks
+- `subagent` — spawned sub-agents
+- `paperclip` — Paperclip logging (if installed)
+- anything else — plugins, integrations
 
-Primary input:
-- `~/.openclaw/agents/main/sessions/sessions.json`
+## Time windows
 
-Optional secondary input only if the user explicitly provides it:
-- a user-supplied exported JSON file with the same purpose
+Detect from user's phrasing:
+- "this week" / default → last 7 days
+- "today" → last 24 hours
+- "this month" → last 30 days
+- "all time" / "all-time" → no filter
 
-## Required behavior
+Filter by `updatedAt >= cutoff_ms`.
 
-1. Read only the sessions ledger file.
-2. Analyze usage by session category where possible, for example: main, cron, subagent, paperclip, heartbeat, or other visible categories from session metadata.
-3. Show totals for tokens, estimated cost, and number of sessions.
-4. Support time windows when the user asks, such as:
-   - today
-   - last 7 days
-   - last 30 days
-   - all time
-5. Flag suspicious patterns in plain English, for example:
-   - high-token background tasks
-   - expensive low-value cron runs
-   - a cheap model consuming excessive total tokens
-6. Give concise recommendations, but keep them separate from any action. Diagnose first.
+## Steps
+
+1. Read and parse sessions.json. If missing, say so and stop.
+
+2. Filter by time window based on user's phrasing.
+
+3. Group by category (3rd `:` segment of key). Sum `totalTokens` and `estimatedCostUsd`.
+
+4. Sort by tokens descending. Calculate % of total for both tokens and cost.
+
+5. Flag anomalies:
+   - **⚠️ SINKHOLE**: category >40% tokens but <15% cost (cheap model, high volume — likely a logging/cron drain)
+   - **⚠️ EXPENSIVE**: non-main category >35% cost but <15% tokens (expensive model, few calls — check model config)
+
+6. Output the table and 1-2 insight lines.
 
 ## Output format
 
-Prefer a compact table plus 2 to 5 short observations.
+```
+🔥 WHERE AM I BURNING TOKENS? (last 7 days)
+66 sessions | 2.8M tokens | $100.65 est.
 
-Include:
-- time window used
-- total sessions
-- total tokens
-- estimated total cost
-- breakdown by category
-- notable anomalies
-- next-step recommendations
+Category        Sess    Tokens    Tok%     Cost   Cost%
+──────────────────────────────────────────────────────────
+paperclip         26      997k   36.1%  $  5.79    5.8%  ⚠️ SINKHOLE
+subagent          22      795k   28.8%  $  9.49    9.4%
+cron              16      692k   25.1%  $ 48.61   48.3%  ⚠️ EXPENSIVE
+main               1      274k   10.0%  $ 36.76   36.5%
 
-## Good prompts
+💡 paperclip is eating 36% of tokens on a cheap model.
+   High volume, low cost = lots of context for little output. Consider disabling.
+💡 cron costs 48% of spend. Verify heartbeat model is Haiku or a local model, not Sonnet.
+```
 
-- where am I burning tokens?
-- token breakdown this week
-- what is costing me the most in OpenClaw?
-- show token sinkholes for the last 30 days
-- which session type is burning the most money?
+Format token counts: `1.2M` / `692k` / `344`. Keep table tight, no padding.
 
-## Bad assumptions to avoid
+## Improvement log (optional)
 
-- Do not assume every expensive session is bad.
-- Do not assume session category names if the data does not support them.
-- Do not fabricate cost numbers, categories, or recommendations.
+Only if the user explicitly asks to log an improvement or track savings:
+- Read/create `~/.openclaw/workspace/memory/token-diet-log.md`
+- Append entry: date, what changed, token % before/after, cost before/after
+- Show running total saved
 
-## If the file is missing
+Format:
+```
+## Token Diet Log
+| Date | Change | Tokens Before | Tokens After | Cost Saved/wk |
+|---|---|---|---|---|
+| 2026-04-05 | Disabled Paperclip | 68% | 36% | ~$5.79 |
+```
 
-Reply with:
-- the exact missing path
-- that the skill is intentionally constrained to that file
-- what the user can provide instead if they want analysis
+## Notes
+
+- `estimatedCostUsd` is OpenClaw's estimate, not exact billing
+- `main` being expensive is expected (interactive Sonnet sessions), don't flag it
+- Sessions.json is cumulative, grows over time, no automatic reset
+- Do not read individual session `.jsonl` files, `sessions.json` has everything needed
+- Do not expand beyond the declared files above unless the user explicitly asks for the optional log
